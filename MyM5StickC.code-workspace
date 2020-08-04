@@ -1,0 +1,16 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"name": "MyJoyc",
+			"path": "MyJoyc"
+		},
+		{
+			"name": "MyRoverC",
+			"path": "MyRoverC"
+		}
+	],
+	"settings": {}
+}
