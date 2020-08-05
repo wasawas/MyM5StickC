@@ -1,15 +1,11 @@
 {
 	"folders": [
 		{
-			"path": "."
+			"path": "MyRoverC"
 		},
 		{
 			"name": "MyJoyc",
 			"path": "MyJoyc"
-		},
-		{
-			"name": "MyRoverC",
-			"path": "MyRoverC"
 		}
 	],
 	"settings": {}
