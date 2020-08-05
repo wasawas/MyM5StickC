@@ -24,10 +24,24 @@
 #define JOYC_RIGHT_ANGLE_REG    0x72
 #define JOYC_RIGHT_DISTANCE_REG 0x76
 
+enum Direction
+{
+    Neutral =0,
+    Forward = 1,
+    Backward = 2,
+    Left = 3,
+    Right = 4,
+    ForwardLeft = 5,
+    ForwardRight = 6,
+    BackwardLeft = 7,
+    BackwardRight =8
+
+};
+
 enum StickSide
 {
-    Left = 0,
-    Right = 1
+    LeftJoy = 0,
+    RightJoy = 1
 };
 
 enum JoyState
@@ -104,6 +118,7 @@ class JoyC
         uint8_t X();
         uint8_t Y();
 
+        Direction GetDirection();
 
         bool IsPressStateChanged();
         void ResetRangeValue();
@@ -124,7 +139,7 @@ class JoyC
         /**
          * @description: Joy side
          */        
-        StickSide _side = Left;
+        StickSide _side = LeftJoy;
 
         uint16_t _angle = 0;
         uint16_t _distance = 0;

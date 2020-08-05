@@ -15,11 +15,18 @@
 #define EEPROM_SIZE 64
 #define SYSNUM 3
 
+enum ModeType{
+	SettingMode = 0,
+    JoyStickMode = 1,
+    BallTrackingMode = 2
+};
+
+
 typedef struct
 {
 	const uint8_t Header = 0xAA;
 	const uint8_t Marker = 0x55;
-	const uint8_t SysNum = SYSNUM;
+	uint8_t Mode;
 	uint16_t L_Angle;
 	uint16_t L_Distance;
 	uint8_t L_X;
@@ -34,8 +41,8 @@ typedef struct
 
 } JoyCommPacket;
 
-JoyC joyL(Left);
-JoyC joyR(Right);
+JoyC joyL(LeftJoy);
+JoyC joyR(RightJoy);
 
 uint8_t show_flag = 0;
 
@@ -58,7 +65,13 @@ WiFiUDP Udp;
 uint32_t send_count = 0;
 uint8_t system_state = 0;
 
-bool SettingMode = false;
+bool ModeSelection = false;
+
+const char *MenuList[] = {"Setting","JoyStick","BallTracking"};
+int SelMode = JoyStickMode;
+int ModeCount = 3;
+bool StickFree = false;
+char text_buff[100];
 
 void SendUDP(JoyCommPacket packet)
 {
@@ -251,34 +264,85 @@ void loop()
 		// 	joyR.SetLedColor(0x100010);
 		// 	show_flag = 1 - show_flag;
 		// }
-		if ((joyL.Press() == Pressed && joyR.Press() == Pressed) 
-		    && (joyL.IsPressStateChanged() == true || joyR.IsPressStateChanged() == true))
+		if( StickFree == true &&  (joyL.Press() == Pressed && joyR.Press() == Pressed) 
+		&& (joyL.IsPressStateChanged() == true || joyR.IsPressStateChanged() == true) )
 		{
-			if (SettingMode == false)
+			if(ModeSelection == false)
 			{
-				SettingMode = true;
-				joyL.ResetRangeValue();
-				joyL.SetLedColor(0x100010);
-				joyR.SetLedColor(0x100010);
+				// Entry Mode Selection
+				ModeSelection = true;
+				joyL.SetLedColor(0x0000FF);
+				joyR.SetLedColor(0x0000FF);
 			}
 			else
 			{
-				SettingMode = false;
-				joyL.SetLedColor(0x00FF00);
-				joyR.SetLedColor(0x00FF00);
+				// Exit Mode Selection
+				ModeSelection = false;
+				switch(SelMode)
+				{
+					case SettingMode:
+						joyL.ResetRangeValue();
+						joyL.SetLedColor(0x100010);
+						joyR.SetLedColor(0x100010);
+						break;
+
+					case BallTrackingMode:
+						break;
+						joyL.SetLedColor(0x00FF00);
+						joyR.SetLedColor(0x00FF00);
+
+					case JoyStickMode:
+					default:
+						joyL.SetLedColor(0x00FF00);
+						joyR.SetLedColor(0x00FF00);
+
+						break;
+				}
 			}
+			StickFree = false;
+		}
+		
+
+		if(StickFree == false && joyL.GetDirection()==Neutral && joyR.GetDirection()==Neutral 
+		     && joyL.Press()==Release && joyR.Press()==Release)
+		{
+			StickFree = true;
 		}
 
-		if (SettingMode == true)
-		{
-			joyL.UpdateValueRange();
-			joyR.UpdateValueRange();
 
-			ShowSettingMode();
+		
+
+		if (ModeSelection == true)
+		{
+			// Show Mode Selection Screen
+			sprintf(text_buff, "Select Mode:%d", SelMode);
+			ShowModeSelect(text_buff,MenuList,ModeCount,0,SelMode);
+			ChangeMode();
 		}
 		else
 		{
+			// Show Selected Screen Mode
+			switch(SelMode)
+			{
+				case SettingMode:
+					joyL.UpdateValueRange();
+					joyR.UpdateValueRange();
+					ShowSettingMode();
+					break;
 
+				case BallTrackingMode:
+					break;
+
+				case JoyStickMode:
+				default:
+					joyL.SetLedColor(0x00FF00);
+					joyR.SetLedColor(0x00FF00);
+					ShowRunningMode();
+					break;
+			}
+
+			// Transfer data to RoverC
+			packet.Mode = SelMode;
 			packet.L_Angle =  joyL.Angle(100);
 			packet.L_Distance = joyL.Distance(100);
 			
@@ -290,16 +354,42 @@ void loop()
 			packet.R_X = Conv(joyR.X(),joyR.XMin,joyR.XMax);
 			packet.R_Y = Conv(joyR.Y(),joyR.YMin,joyR.YMax);
 			packet.R_Press = joyR.Press();
-
-			ShowRunningMode();
-	
 			SendUDP(packet);
+
 		}
+
 
 
 	}
 
 	delay(10);
+}
+
+void ChangeMode()
+{
+	if(StickFree==true && joyL.GetDirection()==Forward)
+	{
+		SelMode--;  
+		StickFree = false;
+
+	}
+	else if(StickFree==true && joyL.GetDirection()==Backward)
+	{
+		SelMode++;  
+		StickFree = false;
+
+	}
+	
+
+	if(SelMode>ModeCount-1)
+	{
+		SelMode=0;
+	}
+	if(SelMode<0)
+	{
+		SelMode=ModeCount-1;
+	}
+
 }
 
 uint8_t Conv(uint8_t value,uint8_t min,uint8_t max)
@@ -321,9 +411,48 @@ void ShowDisconnectedScreen()
 	Lcd.pushSprite(0, 0);
 }
 
+void ShowModeSelect(char *title,const char *menuList[],int itemCount,int startIndex,int selIndex )
+{
+	int max = 9;
+	int index = 0;
+	int posY = 34;
+	uint8_t fontSize = 1;
+	int lineSpace = 14;
+
+	Lcd.fillRect(0, 0, 80, 160, BLACK);
+	Lcd.setTextColor(GREEN);
+	sprintf(text_buff, "%s", title);
+	Lcd.fillRect(0, 0, 80, 20, Lcd.color565(50, 50, 50));
+	Lcd.drawCentreString(text_buff, 40, 6, 1);
+
+	for(int i = 0; i<max;i++)
+	{
+
+		if(startIndex+i >=itemCount)
+		{
+			break;
+		}
+		if(selIndex==startIndex+i)
+		{
+			Lcd.setTextColor(GREEN);
+		}
+		else
+		{
+			Lcd.setTextColor(WHITE);
+		}
+
+		sprintf(text_buff, "%s", MenuList[startIndex+i]);
+		Lcd.drawCentreString(text_buff, 40, posY+(i*lineSpace), 1);
+
+	}
+
+	Lcd.pushSprite(0, 0);
+
+
+}
+
 void ShowRunningMode()
 {
-	char text_buff[100];
 	Lcd.fillRect(0, 0, 80, 160, BLACK);
 
 	sprintf(text_buff, "%s", ssidname.c_str());
@@ -365,7 +494,6 @@ void ShowRunningMode()
 
 void ShowSettingMode()
 {
-	char text_buff[100];
 	Lcd.fillRect(0, 0, 80, 160, BLACK);
 
 	Lcd.drawCentreString("A", 40, 6, 1);

@@ -3,23 +3,11 @@
 #include <WiFiUdp.h>
 #include "RoverC.h"
 
-
-const char *ssid = "M5AP";
-const char *password = "77777777";
-
-TFT_eSprite Lcd = TFT_eSprite(&M5.Lcd);
-WiFiServer server(80);
-
-WiFiUDP Udp1;
-
-RoverC rover =  RoverC();
-uint32_t count = 0;
-
 typedef struct 
 {
     uint8_t Header = 0;
     uint8_t Marker = 0;
-    uint8_t SysNum = 0;
+    uint8_t Mode = 0;
     uint16_t L_Angle = 0;
     uint16_t L_Distance = 0;
     uint8_t L_X = 0;
@@ -34,6 +22,28 @@ typedef struct
 
 } JoyCommPacket;
 
+enum ModeType{
+    NotAvailable = 0,
+    JoyStickMode = 1,
+    BallTrackingMode = 2
+};
+
+
+const char *ssid = "M5AP";
+const char *password = "77777777";
+
+TFT_eSprite Lcd = TFT_eSprite(&M5.Lcd);
+WiFiServer server(80);
+
+WiFiUDP Udp1;
+
+RoverC rover =  RoverC();
+uint32_t count = 0;
+ModeType mode = JoyStickMode; 
+bool isMenu = false;
+
+
+
 
 void SetChargingCurrent(uint8_t CurrentLevel)
 {
@@ -42,6 +52,7 @@ void SetChargingCurrent(uint8_t CurrentLevel)
     Wire1.write(0xC0 | (CurrentLevel & 0x0f));
     Wire1.endTransmission();
 }
+
 
 void setup()
 {
@@ -101,16 +112,21 @@ void loop()
         IPAddress udp_client = Udp1.remoteIP();
         if (packet.Header== 0xAA && packet.Marker == 0x55 && packet.End == 0xee)
         {
-            
             memcpy(&packet,udodata,sizeof(packet));
- 
-            
-            //rover.Move_forward(50);
 
-            rover.Move(packet.L_Angle,packet.L_Distance,packet.L_X,packet.L_Y,
-                       packet.R_Angle,packet.R_Distance,packet.R_X,packet.R_Y);
-            ShowCommandInfo(packet);
+            switch(packet.Mode)
+            {
+                case JoyStickMode:
+                    rover.Move(packet.L_Angle,packet.L_Distance,packet.L_X,packet.L_Y,
+                            packet.R_Angle,packet.R_Distance,packet.R_X,packet.R_Y);
+                    ShowCommandInfo(packet);
+                    break;
+                case BallTrackingMode:
 
+                    break;
+                default:
+                    break;
+            }
         }
         
     }
@@ -118,9 +134,7 @@ void loop()
     if (count > 100)
     {
         count = 0;
-        
         ShowBattery();
-
     }
 }
 

@@ -26,7 +26,7 @@ void JoyC::SetLedColor(uint32_t color)
 uint8_t JoyC::GetX(StickSide side)
 {
     uint8_t read_reg;
-    read_reg = (side == Left) ? JOYC_LEFT_X_REG : JOYC_RIGHT_X_REG;
+    read_reg = (side == LeftJoy) ? JOYC_LEFT_X_REG : JOYC_RIGHT_X_REG;
     M5.I2C.readByte(JOYC_ADDR, read_reg, &_x);
     return _x;
 }
@@ -38,7 +38,7 @@ uint8_t JoyC::GetX()
 uint8_t JoyC::GetY(StickSide side)
 {
     uint8_t read_reg;
-    read_reg = (side == Left) ? JOYC_LEFT_Y_REG : JOYC_RIGHT_Y_REG;
+    read_reg = (side == LeftJoy) ? JOYC_LEFT_Y_REG : JOYC_RIGHT_Y_REG;
     M5.I2C.readByte(JOYC_ADDR, read_reg, &_y);
     return _y;
 }
@@ -51,7 +51,7 @@ uint16_t JoyC::GetAngle(StickSide side)
 {
     uint8_t i2c_read_buff[2];
     uint8_t read_reg;
-    read_reg = (side == Left) ? JOYC_LEFT_ANGLE_REG : JOYC_RIGHT_ANGLE_REG;
+    read_reg = (side == LeftJoy) ? JOYC_LEFT_ANGLE_REG : JOYC_RIGHT_ANGLE_REG;
     M5.I2C.readBytes(JOYC_ADDR, read_reg, 2, i2c_read_buff);
     _angle = (i2c_read_buff[0] << 8) | i2c_read_buff[1];
     return _angle;
@@ -65,7 +65,7 @@ uint16_t JoyC::GetDistance(StickSide side)
 {
     uint8_t i2c_read_buff[2];
     uint8_t read_reg;
-    read_reg = (side == Left) ? JOYC_LEFT_DISTANCE_REG : JOYC_RIGHT_DISTANCE_REG;
+    read_reg = (side == LeftJoy) ? JOYC_LEFT_DISTANCE_REG : JOYC_RIGHT_DISTANCE_REG;
     M5.I2C.readBytes(JOYC_ADDR, read_reg, 2, i2c_read_buff);
     _distance = (i2c_read_buff[0] << 8) | i2c_read_buff[1]; 
     return _distance;   
@@ -81,7 +81,7 @@ uint8_t JoyC::GetPress(StickSide side)
     uint8_t prevPress = 0;
     M5.I2C.readByte(JOYC_ADDR, JOYC_PRESS_REG, &press_value);
     prevPress = _pressed;
-    _pressed = (press_value & ((side == Left) ? 0x10 : 0x01)) != 0;
+    _pressed = (press_value & ((side == LeftJoy) ? 0x10 : 0x01)) != 0;
     if(_pressed != prevPress )
     {
         _pressStateChanged = true;
@@ -177,6 +177,54 @@ void JoyC::ResetRangeValue()
     YMax = 0x00;
     
 }
+
+Direction JoyC::GetDirection()
+{
+    uint8_t thesY = 200*0.2;
+    uint8_t midY = 200*0.5;
+    uint8_t thesX = thesY;
+    uint8_t midX = midY;
+
+    if(_y > midY+thesY && _x < midX+thesX && _x > midX-thesX) 
+    {
+        return Forward;
+    }
+    else if(_y < midY-thesY && _x < midX+thesX && _x > midX-thesX)
+    {
+        return Backward;
+    }
+    else if(_x > midX+thesX && _y < midY+thesY && _y > midY-thesY)
+    {
+        return Left;
+    }
+    else if(_x < midX-thesX && _y < midY+thesY && _y > midY-thesY)
+    {
+        return Right;
+    }
+    else if(_y > midY+thesY && _x > midX+thesX)
+    {
+        return ForwardLeft;
+    }
+    else if(_y > midY+thesY && _x < midX-thesX)
+    {
+        return ForwardRight;
+
+    }
+    else if(_y < midY-thesY && _x > midX+thesX)
+    {
+        return BackwardLeft;
+    }
+    else if(_y < midY-thesY && _x < midX-thesX)
+    {
+        return BackwardRight;
+    }
+    else
+    {
+        return Neutral;
+    }
+    
+}
+
 
 void JoyC::UpdateValueRange()
 {
