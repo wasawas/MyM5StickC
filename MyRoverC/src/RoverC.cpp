@@ -67,7 +67,75 @@ void RoverC::Stop()
   
 }
 
-void RoverC::Move(uint16_t angle_L,uint16_t distance_L,int8_t x_L,int8_t y_L,
+void RoverC::Go(Direction direction, uint16_t speed)
+{
+  switch(direction)
+  {
+    case Forward:
+      _leftFront = speed;
+      _leftRear = speed;
+      _rightFront = speed;
+      _rightRear = speed;
+      break;
+    case Backward:
+      _leftFront = -speed;
+      _leftRear = -speed;
+      _rightFront = -speed;
+      _rightRear = -speed;
+      break;
+    case Left:
+      _leftFront = -speed;
+      _leftRear = speed;
+      _rightFront = speed;
+      _rightRear = -speed;
+      break;
+    case Right:
+      _leftFront = speed;
+      _leftRear = -speed;
+      _rightFront = -speed;
+      _rightRear = speed;
+      break;
+    case RotateLeft:
+      _leftFront = -speed;
+      _leftRear = -speed;
+      _rightFront = speed;
+      _rightRear = speed;
+      break;
+    case RotateRight:
+      _leftFront = speed;
+      _leftRear = speed;
+      _rightFront = -speed;
+      _rightRear = -speed;
+      break;
+    case TurnLeft:
+      _leftFront = speed/2;
+      _leftRear = speed/2;
+      _rightFront = speed;
+      _rightRear = speed;
+      break;
+    case TurnRight:
+      _leftFront = speed;
+      _leftRear = speed;
+      _rightFront = speed/2;
+      _rightRear = speed/2;
+      break;
+    default:
+      break;
+  }
+
+  // Left Front
+  Send_iic(0x00, _leftFront );
+  // Left Rear
+  Send_iic(0x02, _leftRear);
+  // Right Front
+  Send_iic(0x01, _rightFront);
+  // Right Rear
+  Send_iic(0x03, _rightRear);
+
+}
+
+
+void RoverC::MoveByJoyStick(uint16_t angle_L,uint16_t distance_L,int8_t x_L,int8_t y_L,
                           uint16_t angle_R,uint16_t distance_R,int8_t x_R,int8_t y_R)
 {
   int16_t moving = 0;
@@ -85,6 +153,14 @@ void RoverC::Move(uint16_t angle_L,uint16_t distance_L,int8_t x_L,int8_t y_L,
     _leftRear = y_L ;
     _rightFront = y_R;
     _rightRear = y_R;
+
+  }else if(x_L!=0 && y_L==0 && abs(x_L-y_L) >20){
+    // Left-Right Mode
+    _leftFront = -x_L-x_R;
+    _leftRear = x_L-x_R;
+    _rightFront = x_L;
+    _rightRear = -x_L;
+
   }else if(x_L==0 && y_L!=0 ){
     // Forward-Backward Mode
     moving = (y_L);
@@ -95,13 +171,6 @@ void RoverC::Move(uint16_t angle_L,uint16_t distance_L,int8_t x_L,int8_t y_L,
     _rightFront = moving + steering;
     _rightRear = moving + steering;
   
-  }else if(x_L!=0){
-    // Left-Right Mode
-    _leftFront = -x_L-x_R;
-    _leftRear = x_L-x_R;
-    _rightFront = x_L;
-    _rightRear = -x_L;
-
   }else if(y_L==0 && y_R==0){  
     // Rotate Mode (By right stick on x axle)
     _leftFront = -x_R/2 ;

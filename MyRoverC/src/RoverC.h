@@ -5,6 +5,17 @@
 
 #define ROVER_ADDRESS	0X38
 
+enum Direction{
+         Forward = 1,
+         Backward = 2,
+         Left = 3,
+         Right = 4,
+         RotateLeft =5,
+         RotateRight = 6,
+         TurnLeft =7,
+         TurnRight=8
+};
+
 class RoverC
 {
     public:
@@ -20,7 +31,10 @@ class RoverC
         int GetRightFront();
         int GetRightRear();
         void Stop();
-        void Move(uint16_t angle_L,uint16_t distance_L,int8_t x_L,int8_t y_L,
+
+        void Go(Direction direction, uint16_t speed);
+
+        void MoveByJoyStick(uint16_t angle_L,uint16_t distance_L,int8_t x_L,int8_t y_L,
                           uint16_t angle_R,uint16_t distance_R,int8_t x_R,int8_t y_R);
 
     private:
