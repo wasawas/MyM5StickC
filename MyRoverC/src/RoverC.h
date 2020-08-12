@@ -32,6 +32,8 @@ class RoverC
         int GetRightRear();
         void Stop();
 
+        void MoveMotor(int leftFront,int leftRear,int rightFront,int rightRear);
+
         void Go(Direction direction, uint16_t speed);
 
         void MoveByJoyStick(uint16_t angle_L,uint16_t distance_L,int8_t x_L,int8_t y_L,
@@ -45,5 +47,7 @@ class RoverC
         int _rightRear = 0;
 
 };
+
+
 
 #endif

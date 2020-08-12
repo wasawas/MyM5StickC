@@ -19,11 +19,15 @@
 #define PKT_M_UNITV 0x66
 #define PKT_END 0xEE
 
+#define REMOTE_CTRL 0xAF
+#define WHITE_PAPER 0xBF
 
 enum ModeType{
 	SettingMode = 0,
     JoyStickMode = 1,
-    BallTrackingMode = 2
+    TrackingMode = 2,
+    AIMode = 3,
+    Disconnect = 4
 };
 
 
@@ -62,14 +66,19 @@ typedef struct
 
 } UnitVPacket;
 
-enum
+enum 
 {
-    kSeekingL = 0,
+    kSeeking = 0,
+    kSeekingL,
+    kSeekingR,
+    kRotateL,
+    kRotateR,
     kLeft,
     kRight,
     kStraight,
     kTooClose
 };
+
 
 JoyC joyL(LeftJoy);
 JoyC joyR(RightJoy);
@@ -97,22 +106,13 @@ uint8_t system_state = 0;
 
 bool ModeSelection = false;
 
-const char *MenuList[] = {"Setting","JoyStick","BallTracking"};
+int ModeCount = 5;
+const char *MenuList[] = {"Setting","JoyStick","ImageTrack","AIMode","Disconnect"};
 int SelMode = JoyStickMode;
-int ModeCount = 3;
 bool StickFree = false;
 char text_buff[100];
 JoyCommPacket packetJoyC;
 UnitVPacket packetUnitV;
-void SendPacket()
-{
-	if (WiFi.status() == WL_CONNECTED)
-	{
-		Udp.beginPacket(IPAddress(192, 168, 4, 1), 1000 + SYSNUM);
-		Udp.write((uint8_t *)&packetJoyC, sizeof(packetJoyC));
-		Udp.endPacket();
-	}
-}
 
 char APName[20];
 String WfifAPBuff[16];
@@ -121,6 +121,12 @@ String ssidname;
 uint32_t count = 0;
 uint32_t holdCount = 20;
 WiFiServer server(80);
+int udplength =0;
+uint8_t cycle = 0;
+
+
+uint8_t TrackTarget = REMOTE_CTRL;
+
 //============================================================
 // Setup
 //============================================================
@@ -130,107 +136,17 @@ void setup()
 	M5.begin();
 	Wire.begin(0, 26, 10000);
 	EEPROM.begin(EEPROM_SIZE);
-
+	
 	M5.Lcd.setRotation(4);
 	M5.Lcd.setSwapBytes(false);
 	Lcd.createSprite(80, 160);
 	Lcd.setSwapBytes(true);
 
-	Lcd.fillRect(0, 0, 80, 20, Lcd.color565(50, 50, 50));
-	Lcd.setTextSize(2);
-	Lcd.setTextColor(GREEN);
-	Lcd.setCursor(55, 6);
 
 	M5.update();
 	if ((EEPROM.read(0) != 0x56) || (M5.BtnA.read() == 1))
 	{
-		WiFi.mode(WIFI_STA);
-		int n = WiFi.scanNetworks();
-		Lcd.setTextSize(1);
-		Lcd.setTextColor(WHITE);
-		Lcd.fillRect(0, 0, 80, 20, Lcd.color565(50, 50, 50));
-		Lcd.drawCentreString("Wifi SSIDs", 40, 6, 1);
-		Lcd.setTextColor(GREEN);
-
-		if (n == 0)
-		{
-			Lcd.setCursor(5, 20);
-			Lcd.printf("no networks");
-		}
-		else
-		{
-			int count = 0;
-			for (int i = 0; i < n; ++i)
-			{
-				if (WiFi.SSID(i).indexOf("M5AP") != -1)
-				{
-					if (count == 0)
-					{
-						Lcd.setTextColor(GREEN);
-					}
-					else
-					{
-						Lcd.setTextColor(WHITE);
-					}
-					Lcd.setCursor(5, 25 + count * 10);
-					String str = WiFi.SSID(i);
-					Lcd.printf(str.c_str());
-					WfifAPBuff[count] = WiFi.SSID(i);
-					count++;
-				}
-			}
-			Lcd.pushSprite(0, 0);
-			while (1)
-			{
-				if (M5.BtnA.read() == 1)
-				{
-					if (count_bn_a >= holdCount)
-					{
-						count_bn_a = holdCount+1;
-						EEPROM.writeUChar(0, 0x56);
-						EEPROM.writeString(1, WfifAPBuff[choose]);
-						ssidname = WfifAPBuff[choose];
-						break;
-					}
-					count_bn_a++;
-					Serial.printf("count_bn_a %d \n", count_bn_a);
-				}
-				else if ((M5.BtnA.isReleased()) && (count_bn_a != 0))
-				{
-					Serial.printf("count_bn_a %d", count_bn_a);
-					if (count_bn_a > holdCount)
-					{
-					}
-					else
-					{
-						choose++;
-						if (choose >= count)
-						{
-							choose = 0;
-						}
-						Lcd.fillRect(0, 0, 80, 20, Lcd.color565(50, 50, 50));
-						for (int i = 0; i < count; i++)
-						{
-							Lcd.setCursor(5, 25 + i * 10);
-							if (choose == i)
-							{
-								Lcd.setTextColor(GREEN);
-							}
-							else
-							{
-								Lcd.setTextColor(WHITE);
-							}
-							Lcd.printf(WfifAPBuff[i].c_str());
-						}
-						Lcd.pushSprite(0, 0);
-					}
-					count_bn_a = 0;
-				}
-				delay(10);
-				M5.update();
-			}
-			//EEPROM.writeString(1,WfifAPBuff[0]);
-		}
+		SelectWifi();
 	}
 	else if (EEPROM.read(0) == 0x56)
 	{
@@ -240,28 +156,15 @@ void setup()
 
 	Lcd.fillRect(0, 20, 80, 140, BLACK);
 
-	if (!WiFi.config(local_IP, gateway, subnet, primaryDNS, secondaryDNS))
+	while(StartWifi()==false)
 	{
-		Serial.println("STA Failed to configure");
+		SelectWifi();
 	}
-
-	WiFi.begin(ssidname.c_str(), password);
-
-	while (WiFi.status() != WL_CONNECTED)
-	{
-		delay(500);
-		Serial.print(".");
-	}
-
-	Udp.begin(1003);
-
 	// Lcd.pushImage(0,0,20,20,(uint16_t *)connect_on);
 	Lcd.pushSprite(0, 0);
 }
 
-int udplength =0;
 
-bool bFound = false;
 //============================================================
 // Loop
 //============================================================
@@ -276,14 +179,25 @@ void loop()
 
 	if (WiFi.status() != WL_CONNECTED)
 	{
-		ShowDisconnectedScreen();
+		//ShowDisconnectedScreen();
 
-		count++;
-		if (count > 500)
+		cycle++;
+		if (cycle > 500)
 		{
-			WiFi.config(local_IP, gateway, subnet, primaryDNS, secondaryDNS);
-			count = 0;
+			do
+			{
+				SelectWifi();
+			} while (StartWifi()==false);
+			SelMode = JoyStickMode;
 		}
+		
+
+		// count++;
+		// if (count > 500)
+		// {
+		// 	WiFi.config(local_IP, gateway, subnet, primaryDNS, secondaryDNS);
+		// 	count = 0;
+		// }
 	}
 	else
 	{
@@ -339,21 +253,32 @@ void loop()
 					joyR.SetLedColor(0x100010);
 					break;
 
-				case BallTrackingMode:
+				case TrackingMode:
 					joyL.SetLedColor(0x00FF00);
 					joyR.SetLedColor(0x00FF00);
-					ResetPacket();
-					packetJoyC.Mode = BallTrackingMode;
+					SetCmdPacket();
+					packetJoyC.Mode = TrackingMode;
 					SendPacket();
 					break;
 
 				case JoyStickMode:
-				default:
 					joyL.SetLedColor(0x00FF00);
 					joyR.SetLedColor(0x00FF00);
+					break;
 
+				case Disconnect:
+				default:
+					joyL.SetLedColor(0x0000FF);
+					joyR.SetLedColor(0x0000FF);
 					break;
 			}
+			StickFree = false;
+		}
+		else if(StickFree == true && ModeSelection == false  && SelMode==TrackingMode && joyR.Press() == Pressed &&  joyR.IsPressStateChanged() == true)
+		{
+			SetCmdPacket();
+			packetJoyC.Mode = TrackingMode;
+			SendPacket();
 			StickFree = false;
 		}
 		
@@ -385,18 +310,25 @@ void loop()
 					ShowSettingMode();
 					break;
 
-				case BallTrackingMode:
+				case TrackingMode:
 					ShowBallTrackingMode();
 					break;
 
 				case JoyStickMode:
-				default:
 					joyL.SetLedColor(0x00FF00);
 					joyR.SetLedColor(0x00FF00);
 					ShowJoyStickMode();
 					SetCmdPacket();
 					SendPacket();
-
+					break;
+				case Disconnect:
+				default:
+					DoWifiDisconnect();
+					do
+					{
+						SelectWifi();
+					} while (StartWifi()==false);
+					SelMode = JoyStickMode;
 					break;
 			}
 
@@ -406,9 +338,219 @@ void loop()
 
 
 	}
-
+	cycle++;
+	if(cycle>100)
+	{
+		cycle = 0;
+	}
+	
 	//delay(10);
 	
+}
+void DoWifiDisconnect()
+{
+	WiFi.disconnect();
+
+}
+void DoWifiConnection()
+{
+
+}
+void SelectWifi()
+{
+	// Lcd.fillRect(0, 0, 80, 20, Lcd.color565(50, 50, 50));
+	// Lcd.setTextSize(2);
+	// Lcd.setTextColor(GREEN);
+	// Lcd.setCursor(55, 6);
+
+
+	Lcd.fillRect(0, 0, 80, 160, BLACK);
+
+	count_bn_a = 0;
+	choose = 0;
+	holdCount = 20;
+	count = 0;
+
+	Lcd.setTextSize(1);
+	Lcd.setTextColor(WHITE);
+	Lcd.fillRect(0, 0, 80, 20, Lcd.color565(50, 50, 50));
+	Lcd.drawCentreString("Wifi SSIDs", 40, 6, 1);
+	
+	WiFi.mode(WIFI_STA);
+	int count = 0;
+	int n = 0;
+	while(n<=0 || count<=0)
+	{
+		M5.update();
+		Lcd.fillRect(0, 20, 80, 140, BLACK);
+		n = WiFi.scanNetworks();
+		if(n<=0)
+		{
+			Lcd.setTextColor(ORANGE);
+			Lcd.drawCentreString("no networks", 40, 25, 1);
+			Lcd.pushSprite(0, 0);
+		}
+		else
+		{
+			count = 0;
+			for (int i = 0; i < n; ++i)
+			{
+				if (WiFi.SSID(i).indexOf("M5AP") != -1)
+				{
+					if (count == 0)
+					{
+						Lcd.setTextColor(GREEN);
+					}
+					else
+					{
+						Lcd.setTextColor(WHITE);
+					}
+					Lcd.setCursor(5, 25 + count * 10);
+					String str = WiFi.SSID(i);
+					Lcd.printf(str.c_str());
+					WfifAPBuff[count] = WiFi.SSID(i);
+					count++;
+				}
+			}
+			if(count<=0)
+			{
+				Lcd.setTextColor(ORANGE);
+				Lcd.drawCentreString("No M5AP* Wifi", 40, 25, 1);
+				// sprintf(text_buff,"%d %d",cycle,count);
+				// Lcd.drawCentreString(text_buff, 40, 39, 1);
+				Lcd.fillRect(((cycle%8)*10),39,30,2,Lcd.color565(30, 30, 30));
+			}
+
+			Lcd.pushSprite(0, 0);
+		}
+
+		cycle++;
+		if(cycle>100){cycle = 0;}
+
+
+	}
+
+	while (1)
+	{
+		if (M5.BtnA.read() == 1)
+		{
+			if (count_bn_a >= holdCount)
+			{
+				count_bn_a = holdCount+1;
+				EEPROM.writeUChar(0, 0x56);
+				EEPROM.writeString(1, WfifAPBuff[choose]);
+				ssidname = WfifAPBuff[choose];
+				break;
+			}
+			count_bn_a++;
+			Serial.printf("count_bn_a %d \n", count_bn_a);
+		}
+		else if ((M5.BtnA.isReleased()) && (count_bn_a != 0))
+		{
+			Serial.printf("count_bn_a %d", count_bn_a);
+			if (count_bn_a > holdCount)
+			{
+			}
+			else
+			{
+				choose++;
+				if (choose >= count)
+				{
+					choose = 0;
+				}
+				Lcd.fillRect(0, 0, 80, 20, Lcd.color565(50, 50, 50));
+				Lcd.drawCentreString("Wifi SSIDs", 40, 6, 1);
+				for (int i = 0; i < count; i++)
+				{
+					Lcd.setCursor(5, 25 + i * 10);
+					if (choose == i)
+					{
+						Lcd.setTextColor(GREEN);
+					}
+					else
+					{
+						Lcd.setTextColor(WHITE);
+					}
+					Lcd.printf(WfifAPBuff[i].c_str());
+				}
+				Lcd.pushSprite(0, 0);
+			}
+			count_bn_a = 0;
+		}
+		//delay(10);
+		M5.update();
+	}
+	//EEPROM.writeString(1,WfifAPBuff[0]);
+
+
+}
+
+bool StartWifi()
+{
+	Lcd.fillRect(0, 20, 80, 140, BLACK);
+	Lcd.setTextColor(ORANGE);
+	Lcd.drawCentreString("Starting...", 40, 25, 1);
+	Lcd.pushSprite(0, 0);
+
+	if (!WiFi.config(local_IP, gateway, subnet, primaryDNS, secondaryDNS))
+	{
+		Serial.println("STA Failed to configure");
+		Lcd.fillRect(0, 20, 80, 140, BLACK);
+		Lcd.drawCentreString("No configure!", 40, 25, 1);
+		Lcd.pushSprite(0, 0);
+	}
+
+	Lcd.fillRect(0, 20, 80, 140, BLACK);
+	Lcd.drawCentreString("Has Configure", 40, 25, 1);
+	Lcd.pushSprite(0, 0);
+
+
+	WiFi.begin(ssidname.c_str(), password);
+
+	Lcd.fillRect(0, 20, 80, 140, BLACK);
+	Lcd.drawCentreString("Begined", 40, 25, 1);
+	Lcd.pushSprite(0, 0);
+
+
+	while (WiFi.status() != WL_CONNECTED)
+	{
+		delay(50);
+		Serial.print(".");
+		Lcd.fillRect(0, 20, 80, 140, BLACK);
+		Lcd.drawCentreString("Connecting...", 40, 25, 1);
+		Lcd.fillRect(((cycle%8)*10),39,30,2,Lcd.color565(30, 30, 30));
+		//sprintf(text_buff,"%d %d",cycle,count);
+		//Lcd.drawCentreString(text_buff, 40, 53, 1);
+		Lcd.pushSprite(0, 0);
+		cycle++;
+		if(cycle>100)
+		{
+			return false;
+		}
+
+	}
+
+	Lcd.fillRect(0, 20, 80, 140, BLACK);
+	Lcd.drawCentreString("Udp begin", 40, 25, 1);
+	Lcd.pushSprite(0, 0);
+
+	Udp.begin(1003);
+
+	Lcd.fillRect(0, 20, 80, 140, BLACK);
+	Lcd.drawCentreString("Udp OK", 40, 25, 1);
+	Lcd.pushSprite(0, 0);
+
+	return true;
+}
+
+void SendPacket()
+{
+	if (WiFi.status() == WL_CONNECTED)
+	{
+		Udp.beginPacket(IPAddress(192, 168, 4, 1), 1000 + SYSNUM);
+		Udp.write((uint8_t *)&packetJoyC, sizeof(packetJoyC));
+		Udp.endPacket();
+	}
 }
 
 void SetCmdPacket()
@@ -494,9 +636,9 @@ void ShowDisconnectedScreen()
 void ShowModeSelect(char *title,const char *menuList[],int itemCount,int startIndex,int selIndex )
 {
 	int max = 9;
-	int index = 0;
+	//int index = 0;
 	int posY = 34;
-	uint8_t fontSize = 1;
+	//uint8_t fontSize = 1;
 	int lineSpace = 14;
 
 	Lcd.fillRect(0, 0, 80, 160, BLACK);
@@ -534,56 +676,55 @@ void ShowModeSelect(char *title,const char *menuList[],int itemCount,int startIn
 void ShowBallTrackingMode()
 {
 	char text_buff[100];
-	Lcd.fillRect(0, 0, 80, 160, BLACK);
 
-	Lcd.setTextColor(GREEN);
+	Lcd.fillScreen(BLACK);
+
+
+
+    if(packetUnitV.state == kSeekingR || packetUnitV.state == kSeekingL){
+		Lcd.fillRect(0, 0, 80, 20, Lcd.color565(255, 0, 0));
+    }else{
+		Lcd.fillRect(0, 0, 80, 20, Lcd.color565(0, 255, 0));
+    }
+	Lcd.setTextColor(BLACK);
+    
+
 	sprintf(text_buff, "TrackingMode");
-	Lcd.drawString(text_buff, 0, 6, 1);
+	Lcd.drawCentreString(text_buff, 40, 6, 1);
+
+	Lcd.setTextColor(WHITE);
 
 
-	sprintf(text_buff, "  x:%d", packetUnitV.x);
-	Lcd.drawString(text_buff, 0, 20, 1);
-	sprintf(text_buff, "  y:%d", packetUnitV.y);
-	Lcd.drawString(text_buff, 0, 34, 1);
-	sprintf(text_buff, "  w:%d", packetUnitV.w);
-	Lcd.drawString(text_buff, 0, 48, 1);
-	sprintf(text_buff, "  h:%d", packetUnitV.h);
-	Lcd.drawString(text_buff, 0, 62, 1);
-	sprintf(text_buff, "  cx:%d", packetUnitV.cx);
+    Lcd.fillRect((packetUnitV.x*80)/320,22+((54*packetUnitV.y)/240),(packetUnitV.w*80)/320,(packetUnitV.h*54)/240,Lcd.color565(100, 100, 100));
+
+
+	sprintf(text_buff, " X:%3d  Y:%3d", packetUnitV.x, packetUnitV.y);
 	Lcd.drawString(text_buff, 0, 76, 1);
-	sprintf(text_buff, "  cy:%d", packetUnitV.cy);
+	sprintf(text_buff, " W:%3d  H:%3d", packetUnitV.w, packetUnitV.h);
 	Lcd.drawString(text_buff, 0, 90, 1);
-
-	sprintf(text_buff, "area:%d", packetUnitV.area);
+	sprintf(text_buff, "CX:%3d CY:%3d", packetUnitV.cx, packetUnitV.cy);
 	Lcd.drawString(text_buff, 0, 104, 1);
+	sprintf(text_buff, " AR:%d", packetUnitV.area);
+	Lcd.drawString(text_buff, 0, 132, 1);
 
 
 	String strState;
 	switch(packetUnitV.state)
 	{
-		case kSeekingL:
-			strState = "Seeking";
-			break;
-		case kLeft:
-			strState = "Left";
-			break;
-		case kRight:
-			strState = "Right";
-			break;
-		case kStraight:
-			strState = "Forward";
-			break;
-		case kTooClose:
-		default:
-			strState = "Stop";
-			break;
+        case kSeekingL:strState="Seek-L";break;
+        case kSeekingR:strState="Seek-R";break;
+        case kLeft:strState="Left";break;
+        case kRight:strState="Right";break;
+        case kRotateL:strState="Rotate-L";break;
+        case kRotateR:strState="Rotate-R";break;
+        case kStraight:strState="Forward";break;
+        case kTooClose:strState="Stop";break;
+        default:strState="*";break;
 	}
 
-	sprintf(text_buff, "stat:%s", strState);
-	Lcd.drawString(text_buff, 0, 118, 1);
+	sprintf(text_buff, " ST:%s", strState.c_str());
+	Lcd.drawString(text_buff, 0, 146, 1);
 
-	sprintf(text_buff, "found:%d", bFound);
-	Lcd.drawString(text_buff, 0, 132, 1);
 
 
 	Lcd.pushSprite(0, 0);
@@ -592,6 +733,7 @@ void ShowBallTrackingMode()
 void ShowJoyStickMode()
 {
 	Lcd.fillRect(0, 0, 80, 160, BLACK);
+	Lcd.setTextColor(WHITE);
 
 	sprintf(text_buff, "%s", ssidname.c_str());
 	Lcd.fillRect(0, 0, 80, 20, Lcd.color565(50, 50, 50));

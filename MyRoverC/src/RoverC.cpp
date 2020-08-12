@@ -1,8 +1,6 @@
 
 #include "RoverC.h"
 
-
-
 void RoverC::Init(void)    //sda  0     scl  26
 {
     Wire.begin(0, 26, 10000);
@@ -27,8 +25,6 @@ uint8_t RoverC::I2CWritebuff(uint8_t Addr, uint8_t *Data, uint16_t Length)
     return Wire.endTransmission();
 }
 
-
-
 void RoverC::Send_iic(uint8_t Register, uint8_t Speed)
 {
   Wire.beginTransmission(ROVER_ADDRESS);
@@ -41,18 +37,22 @@ uint8_t RoverC::GetI2CState()
 {
   return _i2cState;
 }
+
 int RoverC::GetLeftFront()
 {
   return _leftFront;
 }
+
 int RoverC::GetLeftRear()
 {
   return _leftRear;
 }
+
 int RoverC::GetRightFront()
 {
   return _rightFront;
 }
+
 int RoverC::GetRightRear()
 {
   return _rightRear;
@@ -134,51 +134,12 @@ void RoverC::Go(Direction direction, uint16_t speed)
 
 }
 
-
-void RoverC::MoveByJoyStick(uint16_t angle_L,uint16_t distance_L,int8_t x_L,int8_t y_L,
-                          uint16_t angle_R,uint16_t distance_R,int8_t x_R,int8_t y_R)
+void RoverC::MoveMotor(int leftFront,int leftRear,int rightFront,int rightRear)
 {
-  int16_t moving = 0;
-  int16_t steering = 0;
-  if(distance_L==0 && distance_R==0)
-  {
-    Stop();
-    return;
-  }
-
-
-  if( ((y_R>0 && y_L<0) || (y_R<0 && y_L>0)) && (x_R==0 && x_L==0)){
-    // Rotate Mode (By using both stick on y axle)
-    _leftFront = y_L ;
-    _leftRear = y_L ;
-    _rightFront = y_R;
-    _rightRear = y_R;
-
-  }else if(x_L!=0 && y_L==0 && abs(x_L-y_L) >20){
-    // Left-Right Mode
-    _leftFront = -x_L-x_R;
-    _leftRear = x_L-x_R;
-    _rightFront = x_L;
-    _rightRear = -x_L;
-
-  }else if(x_L==0 && y_L!=0 ){
-    // Forward-Backward Mode
-    moving = (y_L);
-    steering = (y_L*x_R)/100;
-    
-    _leftFront = moving - steering;
-    _leftRear = moving - steering;
-    _rightFront = moving + steering;
-    _rightRear = moving + steering;
-  
-  }else if(y_L==0 && y_R==0){  
-    // Rotate Mode (By right stick on x axle)
-    _leftFront = -x_R/2 ;
-    _leftRear = -x_R/2 ;
-    _rightFront = x_R/2;
-    _rightRear = x_R/2;
-    
-  }
+  _leftFront = leftFront;
+  _leftRear = leftRear;
+  _rightFront = rightFront;
+  _rightRear = rightRear;
 
 
   if(_leftFront > 100){_leftFront=100;}
@@ -199,5 +160,7 @@ void RoverC::MoveByJoyStick(uint16_t angle_L,uint16_t distance_L,int8_t x_L,int8
   Send_iic(0x01, _rightFront);
   // Right Rear
   Send_iic(0x03, _rightRear);
+
 }
+
 
